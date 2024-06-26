@@ -309,7 +309,7 @@ class UOpGraph:
 
   def graph_rewrite(self, sink:UOp, pm:PatternMatcher):
     # recursive rewrite
-    changed = getenv("UOPS_REWRITE", 1)
+    changed = getenv("UOPS_REWRITE", 0)
     run_cnt = 0
     while changed:
       changed = 0
