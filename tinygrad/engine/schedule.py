@@ -1,7 +1,7 @@
 import sys, pickle, atexit
 from collections import defaultdict, deque
 from dataclasses import dataclass
-from typing import Tuple, List, Dict, Optional, Set, DefaultDict, Union, get_args
+from typing import Tuple, List, Dict, Set, DefaultDict, Union, get_args
 from tinygrad.ops import LoadOps, BufferOps, LazyOp, ReduceOps, ConstBuffer, MemBuffer, UNSAFE_PAD_OPS, UnaryOps
 from tinygrad.engine.graph import log_lazybuffer, realized_lazybuffer
 from tinygrad.helpers import GRAPH, DEBUG, MULTIOUTPUT, SAVE_SCHEDULE, GlobalCounters, colored, prod, dedup, all_int, merge_dicts, getenv
@@ -181,7 +181,7 @@ def _recursive_group(tr:LazyBuffer, st:ShapeTracker, r:LazyBuffer, children:Defa
       if len(st_childs:=dedup(s for s in tr_next.srcs if s.base == tr)) > 1: return group.add(r)
       _recursive_group(tr_next, st+st_childs[0].st, r, children, realizes, reduce_for_op, group)
 
-def _graph_schedule(outs:List[LazyBuffer], seen:Set[LazyBuffer]) -> Tuple[DefaultDict[LazyBuffer, List[LazyBuffer]], DefaultDict[LazyBuffer, int],
+def _graph_schedule(outs:List[LazyBuffer]) -> Tuple[DefaultDict[LazyBuffer, List[LazyBuffer]], DefaultDict[LazyBuffer, int],
                                                                     Dict[LazyBuffer, _LBScheduleItem]]:
   """create a graph for realizing the outputs"""
   # start by just realizing the buffers passed in
@@ -190,7 +190,7 @@ def _graph_schedule(outs:List[LazyBuffer], seen:Set[LazyBuffer]) -> Tuple[Defaul
   simple_pads: Set[LazyBuffer] = set()
   children: DefaultDict[LazyBuffer, Dict[LazyBuffer, None]] = defaultdict(dict)
   for out in outs: _recurse_lb(out.base, realizes, allbufs, simple_pads, children, scheduled=True)
-  assign_targets = {x.srcs[1]:x for x in realizes if x.op is LoadOps.ASSIGN and x not in seen and x.realized is None}
+  assign_targets = {x.srcs[1]:x for x in realizes if x.op is LoadOps.ASSIGN and x.realized is None}
 
   # check if we have to realize pads
   for p in simple_pads:
@@ -254,7 +254,7 @@ def _graph_schedule(outs:List[LazyBuffer], seen:Set[LazyBuffer]) -> Tuple[Defaul
 
   output_groups: DefaultDict[LazyBuffer, List[LazyBuffer]] = defaultdict(list)
   for buf in realizes:
-    if buf.realized is not None or buf.op is LoadOps.CONST or buf in seen: continue
+    if buf.realized is not None or buf.op is LoadOps.CONST: continue
     output_groups[reduce_for_op[buf] if buf in reduce_for_op and MULTIOUTPUT else buf].append(buf)
 
     # make things that can't be images not images
@@ -292,16 +292,14 @@ def _graph_schedule(outs:List[LazyBuffer], seen:Set[LazyBuffer]) -> Tuple[Defaul
 # *** DAG ordering: breadth first search ***
 
 SCHEDULES: List = []
-def create_schedule_with_vars(outs:List[LazyBuffer], seen:Optional[Set[LazyBuffer]]=None) -> Tuple[List[ScheduleItem], Dict[Variable, int]]:
-  if seen is None: seen = set()
-  graph, in_degree, prescheduled = _graph_schedule(outs, seen)
+def create_schedule_with_vars(outs:List[LazyBuffer]) -> Tuple[List[ScheduleItem], Dict[Variable, int]]:
+  graph, in_degree, prescheduled = _graph_schedule(outs)
   queue = deque(si for key, si in prescheduled.items() if in_degree[key] == 0)
   schedule: List[ScheduleItem] = []
   var_vals: Dict[Variable, int] = {}
   kernel_number = GlobalCounters.kernel_count
   while queue:
     ps = queue.popleft()
-    for buf in ps.outputs: seen.add(buf)
     if GRAPH:
       kernel_number += 1
       for out in ps.outputs: realized_lazybuffer(out, kernel_number)
@@ -325,8 +323,8 @@ def create_schedule_with_vars(outs:List[LazyBuffer], seen:Optional[Set[LazyBuffe
   if DEBUG >= 1 and len(schedule) >= 10: print(f"scheduled {len(schedule)} kernels")
   return schedule, var_vals
 
-def create_schedule(outs:List[LazyBuffer], seen:Optional[Set[LazyBuffer]]=None) -> List[ScheduleItem]:
-  schedule, var_vals = create_schedule_with_vars(outs, seen)
+def create_schedule(outs:List[LazyBuffer]) -> List[ScheduleItem]:
+  schedule, var_vals = create_schedule_with_vars(outs)
   assert len(var_vals) == 0
   return schedule
 

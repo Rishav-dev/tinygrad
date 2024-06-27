@@ -16,7 +16,6 @@ if __name__ == "__main__":
     dtypes.default_float = dtypes.half
 
   mdl = ResNet50()
-  seen = set()
 
   # the device we are optimizing for
   device: Compiled = Device[Device.DEFAULT]
@@ -33,7 +32,7 @@ if __name__ == "__main__":
       optim.zero_grad()
       out.sparse_categorical_crossentropy(Tensor.empty(64, dtype=dtypes.int)).backward()
       targets += [x.lazydata for x in optim.schedule_step()]
-    sched = create_schedule(targets, seen)
+    sched = create_schedule(targets)
     print(f"schedule length {len(sched)}")
   sched = [x for x in sched if x.ast[0].op not in LoadOps]
 

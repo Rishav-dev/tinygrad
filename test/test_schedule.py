@@ -18,13 +18,8 @@ from test.helpers import is_dtype_supported
 class KernelCountException(Exception): pass
 def check_schedule(t:Union[Tensor, List[Tensor]], allowed:int, to_prerealize:Optional[List[Tensor]]=None, filter_loadops=True):
   if isinstance(t, Tensor): t = [t]
-  seen = set()
-  if to_prerealize:
-    for pre in to_prerealize:
-      for s in pre.schedule(seen=seen.copy()):
-        for i,out in enumerate(s.outputs):
-          seen.add(out)
-  sched = create_schedule(flatten([r.lazydata.lbs for r in t]), seen)
+  if to_prerealize: Tensor.schedule(*to_prerealize)
+  sched = create_schedule(flatten([r.lazydata.lbs for r in t]))
   if filter_loadops: sched = [s for s in sched if s.ast[0].op not in LoadOps]
   if len(sched) != allowed: print(f"SCHEDULE ISSUE, expecting {allowed} got {len(sched)}")
   if len(sched) != allowed or DEBUG >= 3:
